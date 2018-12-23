@@ -1,3 +1,4 @@
+# installing and importing libraries
 install.packages('rbounds')
 install.packages('Matching')
 install.packages('rgenoud')
@@ -7,7 +8,7 @@ library(Matching)
 library(rgenoud)
 library(Matching)
 library(parallel)
-
+# getting the data
 load("replicationpaperdata.RData")
 
 ######################################################################################
@@ -95,25 +96,14 @@ data$ahernoy2[data$ahernoy2==999]<-NA
 
 ###  ^^ Replication Ends here ^^------
 
-
-usoED_new <- subset(data, data$newly_insured==1 & (data$ahernoy2<=8 & data$ahernoy2!=0))
-nusoED_new <- subset(data, data$newly_insured==1 & data$ahernoy2==0)
-nrow(usoED_new) / (nrow(usoED_new) + nrow(nusoED_new))
-
+# calculating percentage of each group that has used ED at least once
 CI_ED <- subset(data, data$continuously_insured==1 & (data$ahernoy2<=8 & data$ahernoy2!=0))
 CI <- subset(data, data$continuously_insured==1 & data$ahernoy2==0)
-totalusoED <- subset(data, data$continuously_insured==1)
-usoED/nusoED
-
 nrow(CI_ED) / (nrow(CI) + nrow(CI_ED))
-(nrow(totalusoED) - nrow(nusoED) )/ (nrow(totalusoED))
 
-unicos <- unique(data$ahernoy2)
-unicos
 NI_ED <- subset(data, data$newly_insured==1 & (data$ahernoy2<=8 & data$ahernoy2!=0))
 NI <- subset(data, data$newly_insured==1 & data$ahernoy2==0)
 nrow(NI_ED) / (nrow(NI_ED) + nrow(NI))
-
 
 NU_ED <- subset(data, data$newly_uninsured==1 & (data$ahernoy2<=8 & data$ahernoy2!=0))
 NU <- subset(data, data$newly_uninsured==1 & data$ahernoy2==0)
@@ -123,8 +113,7 @@ CU_ED <- subset(data, data$continuously_uninsured==1 & (data$ahernoy2<=8 & data$
 CU <- subset(data, data$continuously_uninsured==1 & data$ahernoy2==0)
 nrow(CU_ED) / (nrow(CU_ED) + nrow(CU))
 
-
-
+# converting variables to match the groups in the original study
 aasmev1<-rep(0,length(data$aasmev))
 aasmev1[data$aasmev==1]<-1
 aasmev1[data$aasmev!=1]<-0
@@ -199,12 +188,15 @@ age_p1[data$age_p>=45 & data$age_p<=64]<-2
 age_p1[data$age_p>=65]<-3
 data<-cbind(data, age_p1)
 
+#removing people that we do not have their outcome (number of visits to ED)
 data <- subset(data, data$ahernoy2 !=99 & data$ahernoy2 !=98 & data$ahernoy2 !=97 & data$ahernoy2 !='NA'& data$ahernoy2 !=999)
 
+#binary variable that tell us if they visited or not the ED
 visits<-rep(0,length(data$ahernoy2))
 visits[data$ahernoy2>=1]<-1
 data<-cbind(data, visits)
 
+# removing people that were assigned to neither of the groups
 ins<-rep(0,length(data$hikindna))
 ins[data$newly_insured==1]<-1
 ins[data$continuously_insured==1]<-2
@@ -213,32 +205,38 @@ ins[data$continuously_uninsured==1]<-4
 data<-cbind(data,ins)
 data <- subset(data, data$ins !=0)
 
+#creating data for Insured individuals (newly (treatment) and continuously(control))
 data_Insured_treat <- subset(data, data$newly_insured==1)
 data_Insured_control <- subset(data, data$continuously_insured==1)
 
+#taking random sample out of the original data
 data_Insured_treat <- data_Insured_treat[sample(nrow(data_Insured_treat), 3000), ]
 data_Insured_control <- data_Insured_control[sample(nrow(data_Insured_control), 22000), ]
 data_Insured <- rbind(data_Insured_treat, data_Insured_control)
 
+# creating Tr variable to use on GenMatch, to tell which one are the treatment and control
 Tr_Insured <- rep(0, nrow(data_Insured))
 Tr_Insured[which(data_Insured$newly_insured == 1)] <- 1
 
 #----
+
+#creating data for Uninsured individuals (newly (treatment) and continuously(control))
 data_Uninsured_treat <- subset(data, data$newly_uninsured==1)
 data_Uninsured_control <- subset(data, data$continuously_uninsured==1)
 
+#taking random sample out of the original data
 data_Uninsured_treat <- data_Uninsured_treat[sample(nrow(data_Uninsured_treat), 3000), ]
 data_Uninsured_control <- data_Uninsured_control[sample(nrow(data_Uninsured_control), 22000), ]
 data_Uninsured <- rbind(data_Uninsured_treat, data_Uninsured_control)
 
+# creating Tr variable to use on GenMatch, to tell which one are the treatment and control
 Tr_Uninsured <- rep(0, nrow(data_Uninsured))
 Tr_Uninsured[which(data_Uninsured$newly_uninsured == 1)] <- 1
 
-
+#parallelizing the execution of GenMatch so it can be done faster
 no_cores <- detectCores()-1
 cl <- makeCluster(no_cores)
-
-
+#Variables that we want to achieve balance on (all of them that does not affect directly the outcome):
 BalanceMat_Insured <- cbind(data_Insured$sex, data_Insured$age_p1,data_Insured$origin_i, data_Insured$region,
                             data_Insured$racerpi2, data_Insured$chdev,
                             data_Insured$strev,  data_Insured$hypev1,  data_Insured$aasmev1,
@@ -253,13 +251,13 @@ BalanceMat_Uninsured <- cbind(data_Uninsured$sex,data_Uninsured$age_p1, data_Uni
                               data_Uninsured$hypev1, data_Uninsured$dibev1, data_Uninsured$chdev, data_Uninsured$strev, 
                               data_Uninsured$aasmev1, data_Uninsured$canev1)
 
-
+#Mathcing based on the GenMatch weights, and then we get a good balance so we run Match again to get the 
+# treatment and then we make the sensitivity analysis (For both experiments Uninsured and Insured people)
 gen_Insured <- GenMatch(Tr=Tr_Insured, X=BalanceMat_Insured, estimand = "ATT", M=1, pop.size=20,max.generations = 50, wait.generations = 13, caliper = 0.2,cluster = cl)
 
 
 mgen_Insured <- Match(Tr=Tr_Insured, X=BalanceMat_Insured, Weight.matrix=gen_Insured, estimand= "ATT", M=1, caliper = 0.2)
 summary(mgen_Insured)
-
 
 mout_gen_Insured <- MatchBalance(Tr_Insured ~ data_Insured$sex +data_Insured$age_p1+ data_Insured$origin_i +
                                    data_Insured$region+
@@ -274,7 +272,6 @@ mgen_y_Insured <- Match(Tr=Tr_Insured, X=BalanceMat_Insured,Y = data_Insured$vis
 summary(mgen_y_Insured)
 
 psens(mgen_y_Insured,Gamma = 1.3,GammaInc = 0.01)
-hlsens(mgen_y_Insured,Gamma = 1.3,GammaInc = 0.01, .1)
 
 #-----------
 
